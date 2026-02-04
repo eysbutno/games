@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <iostream> // for debugging, i'm lazy
 
 enum memo_type {
     LOWER, UPPER, EXACT
@@ -17,8 +18,14 @@ template <class state_t, class move_t, class state_hasher_t> struct agent_optimi
         move_t best{};
     };
 
-    state_t cur;
+    state_t cur{};
     std::unordered_map<state_t, memo_info, state_hasher_t> table;
+
+    agent_optimized(int init_size = 0) {
+        if (init_size > 0) {
+            table.reserve(init_size);
+        }
+    }
 
     int negamax(int dep, int alpha, int beta) {
         if (dep == 0 || cur.terminal()) {
@@ -31,12 +38,20 @@ template <class state_t, class move_t, class state_hasher_t> struct agent_optimi
         int alpha_original = alpha;
         auto &entry = table[cur];
         if (entry.depth >= dep) {
-            if ((entry.bound == LOWER && entry.value >= beta) || 
-                (entry.bound == UPPER && entry.value <= alpha) ||
-                entry.bound == EXACT) {
+            if (entry.bound == EXACT) {
                 return entry.value;
+            } else if (entry.bound == LOWER) {
+                alpha = std::max(alpha, entry.value);
+            } else if (entry.bound == UPPER) {
+                beta = std::min(beta, entry.value);
             }
-        } else if (entry.depth != -1) {
+
+            if (alpha >= beta) {
+                return entry.value; 
+            }
+        } 
+        
+        if (entry.depth != -1) {
             auto first_move = entry.best;
             for (int i = 0; i < g.size(); i++) {
                 if (g[i] == first_move) {
@@ -87,7 +102,7 @@ template <class state_t, class move_t, class state_hasher_t> struct agent_optimi
 
         for (int d = 1; ; d++) {
             int val = -INF;
-            move_t optimal;
+            move_t optimal{};
             for (const auto &m : g) {
                 cur.apply(m);
 
@@ -103,6 +118,7 @@ template <class state_t, class move_t, class state_hasher_t> struct agent_optimi
             auto stop = std::chrono::high_resolution_clock::now();
             double seconds = std::chrono::duration_cast<std::chrono::duration<double>>(stop - start).count();
             if (seconds >= max_seconds) {
+                std::cout << d << ' ' << val << ' ' << table.size() << '\n';
                 return optimal;
             }
         }
