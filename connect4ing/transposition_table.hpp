@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cmath>
 
 /**
  * Just a hash table that sorta acts like a cache.
@@ -10,28 +11,41 @@
  */
 template <typename key_t, typename value_t, int SIZE> 
 struct transposition_table {
-    // static_assert((SIZE & (SIZE - 1)) == 0, "SIZE must be a power of 2");
+    static_assert((SIZE & (SIZE - 1)) == 0, "SIZE must be a power of 2");
 
     key_t key[SIZE];
+    key_t opt[SIZE];
     value_t val[SIZE];
 
-    inline size_t index(key_t key) const {
-        return key % SIZE;
+    uint64_t hash(key_t key) const {
+        static const uint64_t C = uint64_t(4e18 * std::acos(0)) + 71;
+        static const int XOR_VAL = 998244353;
+        return __builtin_bswap64((key ^ XOR_VAL) * C);
     }
 
-    bool has(const key_t &cur) {
+    size_t index(key_t key) const {
+        return hash(key) & (SIZE - 1);
+    }
+
+    bool has(key_t cur) {
         auto loc = index(cur);
         return key[loc] == cur;
     }
 
-    value_t get(const key_t &cur) {
+    value_t get_val(key_t cur) {
         auto loc = index(cur);
-        return key[loc] != cur ? value_t{} : val[loc];
+        return val[loc];
     }
 
-    void put(const key_t &cur, const value_t &new_val) {
+    key_t get_move(key_t cur) { 
+        auto loc = index(cur);
+        return opt[loc]; 
+    }
+
+    void put(key_t cur, key_t nxt, value_t new_val) {
         auto loc = index(cur);
         key[loc] = cur;
+        opt[loc] = nxt;
         val[loc] = new_val;
     }
 };

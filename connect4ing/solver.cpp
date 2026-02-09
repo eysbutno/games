@@ -1,15 +1,21 @@
 #include "position.hpp"
 #include "transposition_table.hpp"
 #include "move_sorter.hpp"
+#include <chrono>
 #include <array>
 #include <iostream>
 
-constexpr int TABLE_SIZE = (1 << 23) + 9;
+constexpr int TABLE_SIZE = 1 << 25;
+constexpr std::array<int, 7> ORDER = {0, 6, 1, 5, 2, 4, 3};
+
+int nodes = 0;
 
 int negamax(const position &cur, int alpha, int beta) {
     using key_t = uint64_t;
     using val_t = uint8_t;
     static transposition_table<key_t, val_t, TABLE_SIZE> memo;
+
+    ++nodes;
 
     auto valid = cur.non_losing_moves();
     if (valid == 0) {
@@ -20,7 +26,7 @@ int negamax(const position &cur, int alpha, int beta) {
         return (position::WIDTH * position::HEIGHT + 1 - cur.moves) / 2;
     }
 
-    if (cur.moves == position::HEIGHT * position::WIDTH) {
+    if (cur.moves >= position::WIDTH * position::HEIGHT - 2) {
         return 0;
     }
 
@@ -41,67 +47,79 @@ int negamax(const position &cur, int alpha, int beta) {
     }
 
     auto key = cur.key();
+    move_sorter moves;
+    uint64_t start = 0;
     if (memo.has(key)) {
-        auto val = memo.get(key);
+        auto val = memo.get_val(key);
 
-        // encode the values like:
-        // lower bound:  0 <= x <= 44,  (true value) + WIN
-        // exact bound: 45 <= x <= 89,  (true value) + 3 * WIN + 1
         if (val <= 2 * position::WIN) {
             int lower = val - position::WIN;
             if (alpha < lower) alpha = lower;
             if (alpha >= beta) return alpha;
-        } else {
-            int exact = val - 3 * position::WIN - 1;
+        } else if (val <= 5 * position::WIN) {
+            int exact = val - 4 * position::WIN;
             return exact;
+        } else {
+            int upper = val - 8 * position::WIN;
+            if (upper < beta) beta = upper;
+            if (alpha >= beta) return beta;
+        }
+
+        start = memo.get_move(key);
+        moves.add(start, 255);
+    }
+
+    
+    for (int i : ORDER) {
+        if (uint64_t move = valid & position::column_mask(i)) {
+            if (move != start) moves.add(move, cur.get_score(move));
         }
     }
 
-    move_sorter moves;
-    for (int i = 0; i < position::WIDTH; i++) {
-        if ((cur.column_mask(i) & valid) == 0) continue;
-        moves.add(i, cur.get_score(i));
-    }
-
-    int move = -1;
     int exact = -position::WIN - 1;
-    while ((move = moves.get_next()) != -1) {
-        if ((position::column_mask(move) & valid) == 0) {
-            // we already know this move sucks, ignore
-            continue;
-        }
-
+    int original_alpha = alpha;
+    uint64_t best_move = 0;
+    while (uint64_t move = moves.get_next()) {
         position nxt = cur;
         nxt.play(move);
 
-        int calc = negamax(nxt, -beta, -alpha);
-        if (calc > exact) exact = calc;
+        int calc = -negamax(nxt, -beta, -alpha);
+        if (calc > exact) exact = calc, best_move = move;
         if (calc > alpha) alpha = calc;
         if (alpha >= beta) {
-            memo.put(key, alpha + position::WIN);
+            memo.put(key, best_move, alpha + position::WIN);
             return alpha;
         }
     }
 
-    memo.put(key, exact + 3 * position::WIN + 1);
+    if (exact <= original_alpha) {
+        memo.put(key, best_move, exact + 8 * position::WIN);
+    } else {
+        memo.put(key, best_move, exact + 4 * position::WIN);
+    }
+
     return exact;
 }
 
-int solve(const position &cur, bool weak) {
+int solve(const position &cur, int beta, bool weak) {
+    if (weak) {
+        if (beta < 1) return negamax(cur, -1, beta);
+        return negamax(cur, -1, 1);
+    }
+
     if (cur.has_winning_move()) {
         return (position::WIDTH * position::HEIGHT + 1 - cur.moves) / 2;
     }
 
     int min = -(position::WIDTH * position::HEIGHT - cur.moves) / 2;
     int max = (position::WIDTH * position::HEIGHT + 1 - cur.moves) / 2;
-
-    if (weak) {
-        min = -1, max = 1;
-    }
+    if (beta < max) max = beta;
 
     // we basically use binary search to narrow window until converges
     while (min < max) {
         int med = min + (max - min) / 2;
+        if (med <= 0 && min / 2 < med) med = min / 2;
+        else if (med >= 0 && max / 2 > med) med = max / 2;
         int calc = negamax(cur, med, med + 1);
         
         if (calc <= med) {
@@ -115,6 +133,7 @@ int solve(const position &cur, bool weak) {
 }
 
 int get_best_move(const position &cur, bool weak = false) {
+    auto start = std::chrono::steady_clock::now();
     if (cur.has_winning_move()) {
         for (int i = 0; i < position::WIDTH; i++) {
             if (cur.is_winning_move(i)) return i;
@@ -123,27 +142,38 @@ int get_best_move(const position &cur, bool weak = false) {
 
     auto valid = cur.non_losing_moves();
     move_sorter moves;
-    for (int i = 0; i < position::WIDTH; i++) {
-        if ((cur.column_mask(i) & valid) == 0) continue;
-        moves.add(i, cur.get_score(i));
-        // std::cout << i << " " << cur.get_score(i) << "\n";
+    for (int i : ORDER) {
+        if (uint64_t move = valid & position::column_mask(i)) {
+            moves.add(move, cur.get_score(move));
+        }
     }
 
     int best = -position::WIN - 1;
-    int optimal = -1;
+    uint64_t optimal = 0;
     int move;
-    while ((move = moves.get_next()) != -1) {
-        // std::cout << "try " << move << '\n';
+    while (uint64_t move = moves.get_next()) {
+        // std::cout << "try " << move << ' ' << cur.get_score(move) << '\n';
         position nxt = cur;
         nxt.play(move);
 
-        int calc = -negamax(cur, -1, 1); // -solve(nxt, weak);
+        int calc = -solve(nxt, -best, weak);
         if (calc > best) best = calc, optimal = move;
         if (weak && best >= 1) break;
     }
 
-    std::cout << "found move: " << optimal + 1 << " " << best << "\n";
-    return optimal;
+    int col_move = -1;
+    for (int i = 0; i < position::WIDTH; i++) {
+        if (optimal & position::column_mask(i)) col_move = i;
+    }
+
+    assert(col_move >= 0);
+
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> duration_seconds = end - start;
+    std::cout << "Time elapsed: " << duration_seconds.count() << " seconds" << '\n';
+    std::cout << "found move: " << col_move + 1 << " " << best << " " << nodes << '\n';
+    nodes = 0;
+    return col_move;
 }
 
 void print_board(const position &s) {
@@ -164,7 +194,7 @@ void print_board(const position &s) {
 
 void print_header() {
     std::cout << "\n";
-    for (int c = 0; c < position::WIDTH; c++) {
+    for (int c = 1; c <= position::WIDTH; c++) {
         std::cout << c << " ";
     }
     std::cout << "\n";
@@ -176,9 +206,10 @@ void clear_screen() {
 }
 
 int main() {
-    position cur("44444136666452");
+    position cur;
+    // position cur;
     bool human_turn = false;
-    bool weak = true; // set false for full-strength solver
+    bool weak = false; // set false for full-strength solver
 
     while (true) {
         clear_screen();
@@ -211,12 +242,12 @@ int main() {
                 continue;
             }
 
-            cur.play(col);
+            cur.play_col(col);
             human_turn = false;
         } else {
             std::cout << "AI thinking...\n";
             int ai_move = get_best_move(cur, weak);
-            cur.play(ai_move);
+            cur.play_col(ai_move);
             human_turn = true;
         }
     }

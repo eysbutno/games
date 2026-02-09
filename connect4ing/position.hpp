@@ -29,13 +29,13 @@ struct position {
     pos_t flip = 0;
     int moves = 0;
 
-    position() : board(0), flip(0) {}
+    position() : board(0), flip(0), moves(0) {}
 
-    position(const std::string &seq) : board(0), flip(0) {
+    position(const std::string &seq) : board(0), flip(0), moves(0) {
         for (char c : seq) {
             int move = c - '1';
             assert(can_play(move));
-            play(move);
+            play_col(move);
         }
     }
 
@@ -52,9 +52,20 @@ struct position {
     /**
      * Plays a possible move.
      * 
+     * @param move: bitmap of the cell we place at.
+     */
+    void play(uint64_t move) {
+        board ^= flip;
+        flip |= move;
+        moves++;
+    }
+
+    /**
+     * Plays a possible move.
+     * 
      * @param col: the column we want to play in
      */
-    void play(int col) {
+    void play_col(int col) {
         assert(can_play(col));
         board ^= flip;
 
@@ -68,7 +79,7 @@ struct position {
 
     /**
      * @param col: the column we want to play in
-     * @return if playing in this column is a winning move
+     * @return if this move results in a win.
      */
     bool is_winning_move(int col) const {
         pos_t upd = board | ((flip + bottom_mask_col(col)) & column_mask(col));
@@ -90,7 +101,7 @@ struct position {
         pos_t opponent_win = compute_winning_position(board ^ flip, flip);
         pos_t forced_moves = possible_mask & opponent_win;
         if (forced_moves) {
-            if (__builtin_popcountll(forced_moves) > 1) {
+            if (forced_moves & (forced_moves - 1)) {
                 return 0;
             }
 
@@ -123,12 +134,12 @@ struct position {
     }
 
     /** 
-     * @param col: the column we want to play in
+     * @param move: bitmap of the move we want to play
      * @return how many "winning" cells are created after playing col
      */
-    int get_score(int col) const {
-        pos_t upd_board = board | ((flip + bottom_mask_col(col)) & column_mask(col));
-        pos_t upd_flip = flip | (flip + bottom_mask_col(col));
+    int get_score(uint64_t move) const {
+        pos_t upd_board = board | move;
+        pos_t upd_flip = flip | move;
         return __builtin_popcountll(compute_winning_position(upd_board, upd_flip));
     }
 
