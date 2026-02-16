@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cassert>
 #include <string>
+#include <array>
 
 /**
  * store position w/ two integers
@@ -23,6 +24,8 @@ struct position {
     static constexpr pos_t bottom_mask = bottom<WIDTH, HEIGHT>::mask;
     static constexpr pos_t board_mask = bottom_mask * ((pos_t(1) << HEIGHT) - 1);
 
+    static constexpr std::array<int, 7> pow3 = {1, 3, 9, 27, 81, 243, 729};
+
     // board = bitmap of all pieces current player has
     // flip  = all the currently played positions
     pos_t board = 0;
@@ -31,12 +34,42 @@ struct position {
 
     position() : board(0), flip(0), moves(0) {}
 
+    position(pos_t _board, pos_t _flip, int _moves) 
+           : board(_board), flip(_flip), moves(_moves) {}
+
     position(const std::string &seq) : board(0), flip(0), moves(0) {
         for (char c : seq) {
             int move = c - '1';
             assert(can_play(move));
             play_col(move);
         }
+    }
+
+    void partial_key(uint64_t &key, int col) const {
+        for (uint64_t bit = uint64_t(1) << (col * (HEIGHT + 1)); bit & flip; bit <<= 1) {
+            key *= 3;
+            if (bit & board) key += 1;
+            else key += 2;
+        }
+
+        key *= 3;
+    }
+
+    /**
+     * @return a symmetric, base 3 representation of our board
+     */
+    uint64_t to_b3() const {
+        uint64_t key_f = 0;
+        for (int i = 0; i < WIDTH; i++) {
+            partial_key(key_f, i);
+        }
+
+        uint64_t key_r = 0;
+        for (int i = WIDTH - 1; i >= 0; i--) {
+            partial_key(key_r, i);
+        }
+
+        return key_f < key_r ? key_f / 3 : key_r / 3;
     }
 
     /**
