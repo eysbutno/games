@@ -1,4 +1,5 @@
 #include "solver.hpp"
+#include <iostream>
 
 int solver::negamax(const position &cur, int alpha, int beta) {
     auto valid = cur.non_losing_moves();
@@ -12,6 +13,10 @@ int solver::negamax(const position &cur, int alpha, int beta) {
 
     if (cur.moves >= position::WIDTH * position::HEIGHT - 2) {
         return 0;
+    }
+
+    if (auto value = book.get_minimax(cur)) {
+        return value - position::WIN;
     }
 
     // since we know neither side can immediately win, we can adjust alpha/beta
@@ -118,7 +123,7 @@ std::array<int, position::WIDTH> solver::analyze(const position &cur, bool weak)
             if (!cur.can_play(i)) return solver::INVALID_MOVE;
             auto nxt = cur;
             nxt.play_col(i);
-            return solver::solve(nxt, weak);
+            return -solver::solve(nxt, weak);
         });
     }
 
@@ -128,4 +133,16 @@ std::array<int, position::WIDTH> solver::analyze(const position &cur, bool weak)
     }
 
     return pulled;
+}
+
+int solver::get_best_move(const position &cur, bool weak) {
+    auto res = analyze(cur, weak);
+    int best = 0;
+    for (int i = 1; i < position::WIDTH; i++) {
+        if (res[i] > res[best]) {
+            best = i;
+        }
+    }
+
+    return best;
 }

@@ -1,4 +1,4 @@
-#include "solver.hpp"
+#include "solver.cpp"
 
 using namespace solver;
 
@@ -32,17 +32,11 @@ void clear_screen() {
 }
 
 int main() {
-    position cur("12345671");
-    // position cur;
+    solver::book.load("8-ply.bin");
+    position cur{};
+    
     bool human_turn = false;
-
-    auto start = std::chrono::steady_clock::now();
-    // std::cout << solver::solve(cur, false, position::WIN) << '\n';
-    auto end = std::chrono::steady_clock::now();
-    std::chrono::duration<double> duration_seconds = end - start;
-    std::cout << "Time elapsed: " << duration_seconds.count() << " seconds" << '\n';
-    // std::cout << solver::num_good << '\n';
-    /*
+    bool weak = false;
 
     while (true) {
         clear_screen();
@@ -79,7 +73,7 @@ int main() {
             human_turn = false;
         } else {
             std::cout << "AI thinking...\n";
-            int ai_move = get_best_move(cur, weak);
+            int ai_move = solver::get_best_move(cur, weak);
             cur.play_col(ai_move);
             human_turn = true;
         }
@@ -88,5 +82,4 @@ int main() {
     print_header();
     print_board(cur);
     return 0;
-    */
 }

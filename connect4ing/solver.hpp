@@ -23,4 +23,6 @@ namespace solver {
     int solve(const position &cur, bool weak);
 
     std::array<int, position::WIDTH> analyze(const position &cur, bool weak);
+
+    int get_best_move(const position &cur, bool weak);
 };
